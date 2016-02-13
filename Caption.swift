@@ -16,9 +16,10 @@ class Caption {
     var alive = true
     var duration = 8.0
     var padding = 20.0 as CGFloat
+    static let n_slots = 20
     //var padding = 0 as CGFloat
     
-    init(text: String, parent: UIView) {
+    init(text: String, parent: UIView, slot: Int) {
         self.parentView = parent
         self.text = text
         self.view.text = text
@@ -27,12 +28,14 @@ class Caption {
         self.view.font = UIFont(name: "HelveticaNeue-ThinItalic", size: 42)
         self.view.contentInset = UIEdgeInsetsMake(0, self.padding, 0, self.padding)
         self.view.sizeToFit()
+        self.view.frame.origin = CGPoint(x: 0, y: 0)
         self.view.frame.insetInPlace(dx: -self.padding, dy: 0)
         self.view.frame.offsetInPlace(dx: -self.view.frame.width / 2, dy: 0)
         
         self.view.frame.offsetInPlace(dx: self.parentView!.frame.width/2, dy: 0)
         
-        self.view.frame.offsetInPlace(dx: 0, dy: CGFloat.random(-self.parentView!.frame.height, self.parentView!.frame.height))
+        //self.view.frame.offsetInPlace(dx: 0, dy: CGFloat.random(-self.parentView!.frame.height, self.parentView!.frame.height))
+        self.view.frame.offsetInPlace(dx: 0, dy: CGFloat(Float(slot) / Float(Caption.n_slots+1)) * self.parentView!.frame.height * 2 - self.parentView!.frame.height / 2)
 
         // Start invisible
         self.view.alpha = 0

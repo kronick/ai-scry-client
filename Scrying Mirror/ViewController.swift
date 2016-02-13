@@ -42,6 +42,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     var currentTemperature = 0.5 as Float
     
     var captions = [Caption]()
+    var captionSlot = 0
     
     var audioPlayers = [AVAudioPlayer]()
     let instrumentNames = ["pluck", "short", "plinky", "zero", "bell", "tri"]
@@ -201,8 +202,14 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         // Update the temperature slider gradient's frame
         self.gradientLayer.frame = CGRectMake(0, 0, self.SliderView.frame.width, self.SliderView.frame.height)
-            
+          
+        // Resize webview content
         self.webViewDidFinishLoad(AboutWebViewText)
+            
+        // Re-center captions
+            for c in self.captions {
+                c.view.frame.origin = CGPoint(x: -c.padding - c.view.frame.width / 2 + c.parentView!.frame.width / 2, y: c.view.frame.origin.y)
+            }
 }
 
     func beginSession() {
@@ -393,7 +400,8 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                     for c in newCaptions! {
                         if c == "" { continue }
                         dispatch_sync(dispatch_get_main_queue(), {
-                            let newCaption = Caption(text: c, parent: self.CaptionsView!)
+                            let newCaption = Caption(text: c, parent: self.CaptionsView!, slot: self.captionSlot % Caption.n_slots)
+                            self.captionSlot += Int.random(3,7)
                             self.captions.append(newCaption)
                             delay(Double(i++) * 1) {
                                 newCaption.enter()
