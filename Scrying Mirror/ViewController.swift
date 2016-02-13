@@ -10,7 +10,7 @@ import UIKit
 import AVFoundation
 
 
-class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate, AVAudioPlayerDelegate {
+class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate, AVAudioPlayerDelegate, UIWebViewDelegate {
 
     @IBOutlet weak var 🔮button: UIButton!
     @IBOutlet weak var spinnerImage: UIImageView!
@@ -21,6 +21,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     @IBOutlet weak var SliderMaskView: UIView!
     
     @IBOutlet weak var AboutView: UIView!
+    @IBOutlet weak var AccessErrorText: UITextView!
     
     @IBOutlet weak var AboutWebViewText: UIWebView!
     var gradientLayer: CAGradientLayer!
@@ -58,21 +59,36 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Do any additional setup after loading the view, typically from a nib.
         
-        captureSession.sessionPreset = AVCaptureSessionPresetHigh
-        let devices = AVCaptureDevice.devices()
-        for device in devices {
-            if(device.hasMediaType(AVMediaTypeVideo)) {
-                if(device.position == AVCaptureDevicePosition.Back) {
-                    captureDevice = device as? AVCaptureDevice
-                }
-            }
+        // Check to see if we need to request camera access
+        switch AVCaptureDevice.authorizationStatusForMediaType(AVMediaTypeVideo) {
+            case .Authorized:
+                print("Camera access OK")
+                self.AccessErrorText.hidden = true
+                beginSession()
+            case .Denied, .Restricted:
+                print("Camera access DENIED")
+                self.AccessErrorText.hidden = false
+            case .NotDetermined:
+                print("Requesting camera access...")
+                AVCaptureDevice.requestAccessForMediaType(AVMediaTypeVideo, completionHandler: { (granted) -> Void in
+                    if(granted) {
+                        print("Camera access granted")
+                        dispatch_async(dispatch_get_main_queue(), {
+                            self.AccessErrorText.hidden = true
+                            self.showAboutView(self)
+                            self.beginSession()
+                        })
+                    }
+                    else {
+                        print("Camera access denied!")
+                        dispatch_async(dispatch_get_main_queue(), {
+                            self.AccessErrorText.hidden = false
+                        })
+                    }
+                })
         }
         
-        if(captureDevice != nil) {
-            beginSession()
-        }
         
         // Add perspective effects to CaptionsView layers
         var perspectiveTransform = CATransform3DIdentity;
@@ -110,9 +126,22 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         
         AboutView.hidden = true
-        AboutWebViewText.loadHTMLString("<style>* { color: white; } </style><h1>Hey</h1><p>What's up?</p>", baseURL: nil)
+        AboutWebViewText.delegate = self
+        AboutWebViewText.loadHTMLString(aboutPageA, baseURL: nil)
+        //AboutWebViewText.scrollView.scrollEnabled = false
 
         
+    }
+    
+    func webViewDidFinishLoad(webView: UIWebView) {
+        webView.scrollView.contentSize = CGSizeMake(webView.frame.size.width, webView.scrollView.contentSize.height)
+    }
+    func webView(webView: UIWebView, shouldStartLoadWithRequest request: NSURLRequest, navigationType: UIWebViewNavigationType) -> Bool {
+        if navigationType == UIWebViewNavigationType.LinkClicked {
+            UIApplication.sharedApplication().openURL(request.URL!)
+            return false
+        }
+        return true
     }
     
     override func viewDidAppear(animated: Bool) {
@@ -172,10 +201,23 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         // Update the temperature slider gradient's frame
         self.gradientLayer.frame = CGRectMake(0, 0, self.SliderView.frame.width, self.SliderView.frame.height)
+            
+        self.webViewDidFinishLoad(AboutWebViewText)
 }
 
-    
     func beginSession() {
+        captureSession.sessionPreset = AVCaptureSessionPresetHigh
+        let devices = AVCaptureDevice.devices()
+        for device in devices {
+            if(device.hasMediaType(AVMediaTypeVideo)) {
+                if(device.position == AVCaptureDevicePosition.Back) {
+                    captureDevice = device as? AVCaptureDevice
+                }
+            }
+        }
+        
+        if(captureDevice == nil) { return }
+        
         do {
             try captureSession.addInput(AVCaptureDeviceInput(device: captureDevice))
         } catch {
@@ -260,9 +302,18 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     func setTemperatureBGForValue(value: Float) {
         let percent = CGFloat((value - TemperatureSlider.minimumValue) / (TemperatureSlider.maximumValue - TemperatureSlider.minimumValue))
-        let sliderX = TemperatureSlider.frame.height / 2 + (self.view.bounds.width - TemperatureSlider.frame.height) * percent
+        var sliderX = TemperatureSlider.frame.height / 2 + (self.view.bounds.width - TemperatureSlider.frame.height) * percent
         self.SliderMaskView.frame = CGRectMake(self.SliderMaskView.frame.origin.x, self.SliderMaskView.frame.origin.y, sliderX, self.SliderMaskView.bounds.height)
         
+        sliderX -= TemperatureSlider.frame.height / 2
+        let _ = Particle(parent: self.view, origin: CGPoint(x: sliderX, y: self.TemperatureSlider.frame.origin.y), energy: value)
+    }
+    
+    func emitParticleAtSlider(value: Float) {
+        let percent = CGFloat((value - TemperatureSlider.minimumValue) / (TemperatureSlider.maximumValue - TemperatureSlider.minimumValue))
+        var sliderX = TemperatureSlider.frame.height / 2 + (self.view.bounds.width - TemperatureSlider.frame.height) * percent
+        sliderX -= TemperatureSlider.frame.height / 2
+        let _ = Particle(parent: self.view, origin: CGPoint(x: sliderX, y: self.TemperatureSlider.frame.origin.y), energy: value)
     }
     
     @IBAction func captureAndSendFrame(sender: UIButton?) {
@@ -306,7 +357,6 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             "uuid": UIDevice.currentDevice().identifierForVendor!.UUIDString
             ] as Dictionary<String, String>
         //let params = ["image": "None", "temperature": "0.5", "n": "10"] as Dictionary<String, String>
-        print(params["uuid"])
         
         do {
             print("Sending request with image as Base64-encoded jpeg...")
@@ -350,8 +400,6 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                                 
                                 let instrument = (temperatureWhenRequestWasSent - 0.1) / 1.91 * Float(self.instrumentNames.count)
                                 self.audioPlayers[Int(instrument) * 6 + Int.random(0,5)].play()
-                                print("Instrument: " + String(instrument))
-                                print("IDX: " + String(Int(instrument) * 6 + Int.random(0,5)))
                                 
                                 // iOS speech synthesis is flakey between 8 and 9, so set default utterance rate based on iOS version
                                 var minRate = 0.15 as Float
@@ -450,13 +498,52 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
 
             self.AboutView.alpha = 1
         }, completion: nil)
+        
+        
+        UIView.animateWithDuration(0.5, delay: 1, options: [.CurveEaseOut, .BeginFromCurrentState],  animations: {
+            self.TemperatureSlider.setValue(1.75, animated: true)
+            self.setTemperatureBGForValue(1.75)
+            }, completion: {(b) -> Void in
+                delay(0.1) {
+                    for i in 0...20 {
+                        delay(Double(i) * 0.01) {
+                            self.emitParticleAtSlider(1.75)
+                        }
+                    }
+                }
+                
+                UIView.animateWithDuration(0.8, delay: 1, options: [.CurveEaseOut, .BeginFromCurrentState],  animations: {
+                    self.TemperatureSlider.setValue(0.5, animated: true)
+                    self.setTemperatureBGForValue(0.5)
+                    }, completion: {(b) -> Void in
+                        delay(0.1) {
+                            for i in 0...10 {
+                                delay(Double(i) * 0.01) {
+                                    self.emitParticleAtSlider(0.5)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        )
+        
+        
+
     }
     
     @IBAction func hideAboutView(sender: AnyObject) {
         UIView.animateWithDuration(0.5, animations: {
-            self.AboutView.hidden = true
             self.AboutView.alpha = 0
-            }, completion: nil)
+        }, completion: {(b) -> Void in self.AboutView.hidden = true; })
+        
+        UIView.animateWithDuration(0.3, delay: 0, options: [.BeginFromCurrentState, .CurveEaseOut],  animations: {
+            self.TemperatureSlider.setValue(0.5, animated: true)
+            self.setTemperatureBGForValue(0.5)
+            }, completion: {(b) -> Void in
+
+            }
+        )
         
     }
     @IBAction func screenShotMethod(sender: UIButton) {
